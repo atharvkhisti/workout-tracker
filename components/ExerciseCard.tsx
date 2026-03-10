@@ -70,16 +70,20 @@ export function ExerciseCard({ dayId, slot }: ExerciseCardProps) {
   }
 
   // Get progress status for this specific exercise
-  // Only use currentExerciseData if the exercise matches the selected one
+  // When workout is active: use current workout data if exercise matches
+  // When workout is not active: show the last saved status for this exercise
   const progressStatus: ProgressStatus = (() => {
     if (isWorkoutActive && currentExerciseData) {
-      // Only use current workout data if the exercise ID matches
+      // During active workout, use current workout data if the exercise ID matches
       if (currentExerciseData.exerciseId === selectedExerciseId) {
-        return currentExerciseData.progressStatus;
+        return currentExerciseData.progressStatus || 'same';
       }
     }
-    // Otherwise, get from last workout for this specific exercise
-    return lastWorkout?.progressStatus || 'same';
+    // Not in workout or exercise doesn't match - show last recorded status
+    if (lastWorkout && lastWorkout.progressStatus) {
+      return lastWorkout.progressStatus;
+    }
+    return 'same';
   })();
 
   const handleSelectExercise = (exerciseId: string) => {

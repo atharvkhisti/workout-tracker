@@ -87,8 +87,8 @@ interface WorkoutStore {
   getWorkoutDays: () => WorkoutDay[];
 }
 
-// Helper to get current date string
-const getDateString = () => new Date().toISOString().split('T')[0];
+// Helper to get current date string with time for proper sorting
+const getDateString = () => new Date().toISOString();
 
 // Create store with persistence
 export const useWorkoutStore = create<WorkoutStore>()(
@@ -309,7 +309,7 @@ export const useWorkoutStore = create<WorkoutStore>()(
               exerciseId: data.exerciseId,
               sets: validSets,
               totalVolume: calculateWorkoutVolume(validSets),
-              progressStatus: data.progressStatus, // Save the progress status
+              progressStatus: data.progressStatus || 'same', // Ensure it's never undefined
             });
           }
         });
