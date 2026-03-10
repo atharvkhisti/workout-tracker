@@ -17,9 +17,11 @@ export const supabase = supabaseUrl && supabaseAnonKey
 export async function saveWorkoutLog(log: {
   date: string;
   dayId: string;
+  slotPosition: number;
   exerciseId: string;
   sets: Array<{ weight: number; reps: number; setType: string }>;
   totalVolume: number;
+  progressStatus: string;
 }) {
   if (!supabase) {
     console.warn('Supabase not configured, using local storage');
@@ -31,9 +33,11 @@ export async function saveWorkoutLog(log: {
     .insert({
       date: log.date,
       day_id: log.dayId,
+      slot_position: log.slotPosition,
       exercise_id: log.exerciseId,
       sets: log.sets,
       total_volume: log.totalVolume,
+      progress_status: log.progressStatus,
     })
     .select()
     .single();

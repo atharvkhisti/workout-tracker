@@ -10,10 +10,11 @@ CREATE TABLE IF NOT EXISTS workout_logs (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   date DATE NOT NULL,
   day_id TEXT NOT NULL,
+  slot_position INTEGER DEFAULT 0,
   exercise_id TEXT NOT NULL,
   sets JSONB NOT NULL,
   total_volume NUMERIC NOT NULL,
-  user_id UUID REFERENCES auth.users(id)
+  progress_status TEXT DEFAULT 'same'
 );
 
 -- Body metrics table
@@ -23,8 +24,7 @@ CREATE TABLE IF NOT EXISTS body_metrics (
   date DATE NOT NULL,
   weight NUMERIC NOT NULL,
   body_fat NUMERIC DEFAULT 0,
-  muscle_percent NUMERIC DEFAULT 0,
-  user_id UUID REFERENCES auth.users(id)
+  muscle_percent NUMERIC DEFAULT 0
 );
 
 -- Big 3 lifts tracking table
@@ -35,8 +35,7 @@ CREATE TABLE IF NOT EXISTS big3_logs (
   exercise_id TEXT NOT NULL,
   weight NUMERIC NOT NULL,
   reps INTEGER NOT NULL,
-  estimated_1rm NUMERIC NOT NULL,
-  user_id UUID REFERENCES auth.users(id)
+  estimated_1rm NUMERIC NOT NULL
 );
 
 -- Create indexes for faster queries
@@ -46,16 +45,13 @@ CREATE INDEX IF NOT EXISTS idx_body_metrics_date ON body_metrics(date DESC);
 CREATE INDEX IF NOT EXISTS idx_big3_logs_date ON big3_logs(date DESC);
 CREATE INDEX IF NOT EXISTS idx_big3_logs_exercise ON big3_logs(exercise_id);
 
--- Enable Row Level Security (optional, for multi-user support)
+-- Allow public access (no authentication required)
+-- This is fine for personal use
 ALTER TABLE workout_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE body_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE big3_logs ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies (uncomment when adding authentication)
--- CREATE POLICY "Users can view their own workout logs"
---   ON workout_logs FOR SELECT
---   USING (auth.uid() = user_id);
-
--- CREATE POLICY "Users can insert their own workout logs"
---   ON workout_logs FOR INSERT
---   WITH CHECK (auth.uid() = user_id);
+-- Policies for anonymous access
+CREATE POLICY "Allow all access to workout_logs" ON workout_logs FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to body_metrics" ON body_metrics FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to big3_logs" ON big3_logs FOR ALL USING (true) WITH CHECK (true);
