@@ -2,19 +2,22 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { workoutDays, type WorkoutDay } from '@/lib/exercises';
 import { calculateWorkoutVolume, type SetData, type ProgressStatus } from '@/lib/progressUtils';
+import { saveWorkoutLog, getWorkoutLogs, saveBodyMetric, getBodyMetrics, saveBig3Log, getBig3Logs, isSupabaseConfigured } from '@/lib/supabase';
 
 // Types
 export interface ExerciseLog {
+  id?: string;
   date: string;
   dayId: string;
   slotPosition: number;
   exerciseId: string;
   sets: SetData[];
   totalVolume: number;
-  progressStatus: ProgressStatus; // Save the progress indicator status
+  progressStatus: ProgressStatus;
 }
 
 export interface BodyMetric {
+  id?: string;
   date: string;
   weight: number;
   bodyFat: number;
@@ -22,6 +25,7 @@ export interface BodyMetric {
 }
 
 export interface Big3Log {
+  id?: string;
   date: string;
   exerciseId: string;
   weight: number;
@@ -64,6 +68,9 @@ interface WorkoutStore {
   // Current workout in progress
   currentWorkout: CurrentWorkout | null;
 
+  // Loading state
+  syncing: boolean;
+
   // Actions
   selectExercise: (dayId: string, slotPosition: number, exerciseId: string) => void;
   getSelectedExercise: (dayId: string, slotPosition: number) => string | undefined;
@@ -71,17 +78,20 @@ interface WorkoutStore {
   startWorkout: (dayId: string) => void;
   updateSet: (slotPosition: number, setIndex: number, data: SetData) => void;
   toggleProgressStatus: (slotPosition: number) => void;
-  saveWorkout: () => void;
+  saveWorkout: () => Promise<void>;
   clearCurrentWorkout: () => void;
 
   getLastWorkoutForExercise: (exerciseId: string) => ExerciseLog | undefined;
   getWorkoutHistory: (exerciseId: string, limit?: number) => ExerciseLog[];
 
-  addBodyMetric: (metric: Omit<BodyMetric, 'date'>) => void;
+  addBodyMetric: (metric: Omit<BodyMetric, 'date'>) => Promise<void>;
   getBodyMetricsHistory: (limit?: number) => BodyMetric[];
 
-  addBig3Log: (log: Omit<Big3Log, 'date'>) => void;
+  addBig3Log: (log: Omit<Big3Log, 'date'>) => Promise<void>;
   getBig3History: (exerciseId: string, limit?: number) => Big3Log[];
+
+  // Sync with Supabase
+  syncFromSupabase: () => Promise<void>;
 
   // Get workout days with selected exercises
   getWorkoutDays: () => WorkoutDay[];
@@ -89,6 +99,35 @@ interface WorkoutStore {
 
 // Helper to get current date string with time for proper sorting
 const getDateString = () => new Date().toISOString();
+
+// Helper to convert Supabase data to local format
+const convertSupabaseLog = (log: Record<string, unknown>): ExerciseLog => ({
+  id: log.id as string,
+  date: log.date as string,
+  dayId: log.day_id as string,
+  slotPosition: log.slot_position as number,
+  exerciseId: log.exercise_id as string,
+  sets: log.sets as SetData[],
+  totalVolume: log.total_volume as number,
+  progressStatus: (log.progress_status as ProgressStatus) || 'same',
+});
+
+const convertSupabaseMetric = (metric: Record<string, unknown>): BodyMetric => ({
+  id: metric.id as string,
+  date: metric.date as string,
+  weight: metric.weight as number,
+  bodyFat: metric.body_fat as number,
+  muscleMass: metric.muscle_percent as number,
+});
+
+const convertSupabaseBig3 = (log: Record<string, unknown>): Big3Log => ({
+  id: log.id as string,
+  date: log.date as string,
+  exerciseId: log.exercise_id as string,
+  weight: log.weight as number,
+  reps: log.reps as number,
+  estimated1RM: log.estimated_1rm as number,
+});
 
 // Create store with persistence
 export const useWorkoutStore = create<WorkoutStore>()(
@@ -99,6 +138,30 @@ export const useWorkoutStore = create<WorkoutStore>()(
       bodyMetrics: [],
       big3Logs: [],
       currentWorkout: null,
+      syncing: false,
+
+      syncFromSupabase: async () => {
+        if (!isSupabaseConfigured()) return;
+
+        set({ syncing: true });
+        try {
+          const [logs, metrics, big3] = await Promise.all([
+            getWorkoutLogs(),
+            getBodyMetrics(),
+            getBig3Logs(),
+          ]);
+
+          set({
+            workoutLogs: logs.map(convertSupabaseLog),
+            bodyMetrics: metrics.map(convertSupabaseMetric),
+            big3Logs: big3.map(convertSupabaseBig3),
+            syncing: false,
+          });
+        } catch (error) {
+          console.error('Error syncing from Supabase:', error);
+          set({ syncing: false });
+        }
+      },
 
       selectExercise: (dayId, slotPosition, exerciseId) => {
         set((state) => {
@@ -290,7 +353,7 @@ export const useWorkoutStore = create<WorkoutStore>()(
         });
       },
 
-      saveWorkout: () => {
+      saveWorkout: async () => {
         const state = get();
         if (!state.currentWorkout) return;
 
@@ -309,15 +372,37 @@ export const useWorkoutStore = create<WorkoutStore>()(
               exerciseId: data.exerciseId,
               sets: validSets,
               totalVolume: calculateWorkoutVolume(validSets),
-              progressStatus: data.progressStatus || 'same', // Ensure it's never undefined
+              progressStatus: data.progressStatus || 'same',
             });
           }
         });
 
+        // Save to local state first
         set((state) => ({
           workoutLogs: [...state.workoutLogs, ...newLogs],
           currentWorkout: null,
         }));
+
+        // Then sync to Supabase
+        if (isSupabaseConfigured()) {
+          try {
+            await Promise.all(
+              newLogs.map((log) =>
+                saveWorkoutLog({
+                  date: log.date,
+                  dayId: log.dayId,
+                  slotPosition: log.slotPosition,
+                  exerciseId: log.exerciseId,
+                  sets: log.sets,
+                  totalVolume: log.totalVolume,
+                  progressStatus: log.progressStatus,
+                })
+              )
+            );
+          } catch (error) {
+            console.error('Error saving to Supabase:', error);
+          }
+        }
       },
 
       clearCurrentWorkout: () => {
@@ -340,13 +425,20 @@ export const useWorkoutStore = create<WorkoutStore>()(
           .slice(0, limit);
       },
 
-      addBodyMetric: (metric) => {
+      addBodyMetric: async (metric) => {
+        const newMetric = { ...metric, date: getDateString() };
+
         set((state) => ({
-          bodyMetrics: [
-            ...state.bodyMetrics,
-            { ...metric, date: getDateString() },
-          ],
+          bodyMetrics: [...state.bodyMetrics, newMetric],
         }));
+
+        if (isSupabaseConfigured()) {
+          try {
+            await saveBodyMetric(newMetric);
+          } catch (error) {
+            console.error('Error saving body metric to Supabase:', error);
+          }
+        }
       },
 
       getBodyMetricsHistory: (limit = 30) => {
@@ -356,13 +448,20 @@ export const useWorkoutStore = create<WorkoutStore>()(
           .slice(0, limit);
       },
 
-      addBig3Log: (log) => {
+      addBig3Log: async (log) => {
+        const newLog = { ...log, date: getDateString() };
+
         set((state) => ({
-          big3Logs: [
-            ...state.big3Logs,
-            { ...log, date: getDateString() },
-          ],
+          big3Logs: [...state.big3Logs, newLog],
         }));
+
+        if (isSupabaseConfigured()) {
+          try {
+            await saveBig3Log(newLog);
+          } catch (error) {
+            console.error('Error saving big3 log to Supabase:', error);
+          }
+        }
       },
 
       getBig3History: (exerciseId, limit = 20) => {

@@ -6,15 +6,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { ExerciseCard } from '@/components/ExerciseCard';
 import { useWorkoutStore } from '@/store/workoutStore';
+import { useAuthStore } from '@/store/authStore';
 import { workoutDays } from '@/lib/exercises';
-import { Dumbbell, BarChart2, Play, Save } from 'lucide-react';
+import { isSupabaseConfigured } from '@/lib/supabase';
+import { Dumbbell, BarChart2, Play, Save, LogOut, RefreshCw } from 'lucide-react';
 
 export default function WorkoutPage() {
   const [mounted, setMounted] = useState(false);
   const [activeDay, setActiveDay] = useState(workoutDays[0].id);
 
-  const { currentWorkout, startWorkout, saveWorkout, clearCurrentWorkout } =
+  const { currentWorkout, startWorkout, saveWorkout, clearCurrentWorkout, syncFromSupabase, syncing } =
     useWorkoutStore();
+  const { user, signOut } = useAuthStore();
 
   useEffect(() => {
     setMounted(true);
@@ -24,12 +27,20 @@ export default function WorkoutPage() {
     startWorkout(activeDay);
   };
 
-  const handleSaveWorkout = () => {
-    saveWorkout();
+  const handleSaveWorkout = async () => {
+    await saveWorkout();
   };
 
   const handleCancelWorkout = () => {
     clearCurrentWorkout();
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+  };
+
+  const handleSync = async () => {
+    await syncFromSupabase();
   };
 
   const isWorkoutActive = currentWorkout !== null;
@@ -54,11 +65,34 @@ export default function WorkoutPage() {
             <Dumbbell className="h-6 w-6 text-emerald-500" />
             <h1 className="text-lg font-semibold">Workout Tracker</h1>
           </div>
-          <Link href="/progress">
-            <Button variant="ghost" size="icon">
-              <BarChart2 className="h-5 w-5" />
-            </Button>
-          </Link>
+          <div className="flex items-center gap-1">
+            {isSupabaseConfigured() && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleSync}
+                disabled={syncing}
+                title="Sync data"
+              >
+                <RefreshCw className={`h-5 w-5 ${syncing ? 'animate-spin' : ''}`} />
+              </Button>
+            )}
+            <Link href="/progress">
+              <Button variant="ghost" size="icon">
+                <BarChart2 className="h-5 w-5" />
+              </Button>
+            </Link>
+            {isSupabaseConfigured() && user && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleSignOut}
+                title="Sign out"
+              >
+                <LogOut className="h-5 w-5" />
+              </Button>
+            )}
+          </div>
         </div>
       </header>
 
